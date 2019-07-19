@@ -28,7 +28,7 @@ float maxT=5.0;        //Max temp
 float minT=0.5;        //Min temp
 float Tchange=0.1;     //Step size for temp
 long int mcs=10000;    //Number of Monte Carlo steps
-int skip=1000;         //Number of steps to omit from data (thermalize)
+int skip=1000;         //Number of steps to omit from data (thermalizing)
 float j=1;             //Coupling constant
 float de = 0.0;        //Initialize change in energy
 double norm = 1.0/float(mcs*n);
@@ -56,9 +56,11 @@ void initialize(int lat[size+1][size+1]){
 //Establish random position
 void random_position(lattice_type &pos){
   pos.x=(int)ceil(MyRand()*size);
+//  printf("%d ",pos.x);
   pos.y=(int)ceil(MyRand()*size);
+//  printf("%d ",pos.y);
   if(pos.x>size || pos.y>size){
-    printf("Starting position falls outside array.");
+    printf("Point falls outside array.");
     exit;
   }
 //printf("%d %d", pos.x,pos.y);
@@ -109,7 +111,6 @@ int magnetization(){
 }
 
 
-
 //Main function
 int main(int argc, char *argv[]){
 
@@ -147,13 +148,13 @@ for(float T=maxT; T>=minT; T=T-Tchange){
       random_position(pos);
       if(p_flip(pos, de, T)) flip(pos);   //Flip spin at lattice point
       }
-    Mag += magnetization();
+    Mag += abs(magnetization());
   }
   AvgMag = Mag*norm;
 
 
   //Write data to file
-  outfile << T <<"\t"<<abs(AvgMag)<< std::endl;
+  outfile << T <<"\t"<<AvgMag<< std::endl;
 }
 outfile.close();
 return 0;
