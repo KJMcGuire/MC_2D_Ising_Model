@@ -1,6 +1,6 @@
 //Author:  Kellie McGuire     kellie@kelliejensen.com
 
-//This program computes the energy, magnetic susceptibility, and specific heat
+//This program computes the energy, magnetization, magnetic susceptibility, and specific heat
 //for a 2D Ising Model of a ferromagnet using Monte Carlo methods with
 //Metropolis sampling. Code was adapted from "Introduction to Monte Carlo
 //methods for an Ising Model of a Ferromagnet'' by Jacques Kotze.
@@ -11,6 +11,10 @@
 #include <iostream>
 #include <fstream>    //Need for ofstream
 #include <time.h>     //Need for time
+#include <random>     //Need for Mersenne Twister rng
+#include <functional>  //Need for std::bind
+
+
 
 
 //Structure for 2D lattice
@@ -21,7 +25,7 @@ struct lattice_type {
 
 
 //Define simulation parameters
-const int size = 32;    //Lattice size;
+const int size = 128;    //Lattice size;
 int n = size*size;     //total number of lattice points
 int lat[size+1][size+1];
 float maxT=5.0;        //Max temp
@@ -33,13 +37,14 @@ float j=1;             //Coupling constant
 float de = 0.0;        //Initialize change in energy
 double norm = 1.0/float(mcs*n);
 
+
 double MyRand(){
   double r = rand()/(RAND_MAX+1.0);
   return r;
 }
 
-//Initialize lattice with random input and print to screen
-void initialize(int lat[size+1][size+1]){
+//Initialize lattice with random spins and print to screen
+void init_hot(int lat[size+1][size+1]){
   int i, j;
     for (j=size; j>=1; j--){    //Column-major loop
       for (i=1; i<=size; i++){
@@ -53,17 +58,28 @@ void initialize(int lat[size+1][size+1]){
     }
 }
 
-//Establish random position
+//Initialize lattize w/ all spins at 1
+void init_cold(int lat[size+1][size+1]){
+  int i, j;
+    for (j=size; j>=1; j--){    //Column-major loop
+      for (i=1; i<=size; i++){
+            lat[i][j]=1;
+        printf("%2d ", lat[i][j]);
+            }
+        printf("\n");
+    }
+}
+
+//Pick random position
 void random_position(lattice_type &pos){
   pos.x=(int)ceil(MyRand()*size);
-//  printf("%d ",pos.x);
+ //printf("%d ",pos.x);
   pos.y=(int)ceil(MyRand()*size);
-//  printf("%d ",pos.y);
+//    printf("%d \n",pos.y);
   if(pos.x>size || pos.y>size){
     printf("Point falls outside array.");
     exit;
   }
-//printf("%d %d", pos.x,pos.y);
 }
 
 //Calculate energy of lattice position
@@ -110,6 +126,46 @@ int magnetization(){
   return m;
 }
 
+//Calculate square of magnetization
+int sq_mag(){
+  int m = 0;
+  for(int y=size; y>= 1; y--){
+    for(int x=1; x<= size; x++){
+      m += lat[x][y];
+    }
+  }
+  return m*m;
+}
+
+
+//Calculate lattice energy
+int total_energy(){
+  lattice_type pos;
+  int E=0;
+  for(int y = size; y >= 1; y--){
+    pos.y=y;
+    for(int x=1; x <= size; x++){
+      pos.x=x;
+      E+=energy_pos(pos);
+    }
+  }
+return E;
+}
+
+//Calculate square of lattice energy
+int sq_energy(){
+  lattice_type pos;
+  int E=0;
+  for(int y = size; y >= 1; y--){
+    pos.y=y;
+    for(int x=1; x <= size; x++){
+      pos.x=x;
+      E+=energy_pos(pos);
+    }
+  }
+return E*E;
+}
+
 
 //Main function
 int main(int argc, char *argv[]){
@@ -122,23 +178,36 @@ if (argc < 2){
 //Create output file for data
 std::ofstream outfile (argv[1]);
 
-//Initialize lattice
-srand(time(NULL));  //Random seed
-lattice_type pos;
-initialize(lat);
+//Create variables for storing changes in observables
+double Mag=0, Mag_avg=0, E_avg_sq=0, EsqAvg=0, C=0;
+double MsqAvg=0, Chi=0, E_avg=0, M_avg_sq=0, Mag_abs=0;
+double etot=0, mtot=0;   //Summation variables
 
-//Allow lattice to thermalize
-for(int i=1; i<skip; i++){
-  random_position(pos);
-  if(p_flip(pos, de, maxT)) flip(pos);   //Flip spin at lattice point
-  }
+//Initialize lattice
+srand(time(NULL));  //Rand() seed
+lattice_type pos;
+init_hot(lat);
+//init_cold(lat);
+
+
+
 
 //Temp loop
 for(float T=maxT; T>=minT; T=T-Tchange){
 
-  //Create variables for storing changes in observables
-  int Mag=0;
-  float AvgMag=0.0;
+  //Allow lattice to thermalize
+  for(int a=1; a<=skip; a++){
+    for(int b=1; b<n; b++){
+      random_position(pos);
+      if(p_flip(pos, de, T)) flip(pos);   //Flip spin at lattice point
+    }
+  }
+
+    //Initialize variables for storing changes in observables
+    int Mag=0;
+    double AvgMag=0, Energy=0, Sq_Energy=0, Sq_Mag=0, Mag_abs=0;
+    etot=0;
+    mtot=0;
 
   //Monte Carlo loop
   for(int i=1; i<mcs; i++){
@@ -148,13 +217,27 @@ for(float T=maxT; T>=minT; T=T-Tchange){
       random_position(pos);
       if(p_flip(pos, de, T)) flip(pos);   //Flip spin at lattice point
       }
-    Mag += abs(magnetization());
-  }
-  AvgMag = Mag*norm;
+    Mag += magnetization();
+    Mag_abs += abs(magnetization());
+    Energy += total_energy()/(2.0); //To avoid double counting
+    Sq_Energy += (total_energy()*total_energy())/(4.0);
+    Sq_Mag += sq_mag();
 
+
+  }
+
+  Mag_avg = Mag_abs*norm;
+  E_avg = Energy*norm;
+  E_avg_sq = E_avg*E_avg;
+  M_avg_sq = Mag_avg*Mag_avg;
+  EsqAvg = Sq_Energy*norm*norm*mcs;
+  MsqAvg = Sq_Mag*norm*norm*mcs;
+  C = (EsqAvg-E_avg_sq)*n/(T*T);  //Heat capacity per spin
+  Chi = ((MsqAvg-(Mag_avg*Mag_avg))*n)/T; //Magnetic susceptibility
 
   //Write data to file
-  outfile << T <<"\t"<<AvgMag<< std::endl;
+  outfile<<T<<"\t"<<Mag_avg<<"\t"<<E_avg<<"\t"<<C<<"\t"<<
+  Chi<<"\t"<<std::endl;
 }
 outfile.close();
 return 0;
